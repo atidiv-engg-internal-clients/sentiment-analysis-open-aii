@@ -39,15 +39,25 @@ def main():
     
     # getting all eligible user reviews
     # -- this will consider new reviews only
+
+    id_query = """SELECT distinct id 
+        FROM `cx-mvp.stage.staging_sentiment_analysis`
+    """
+    old_id_df = staging_client.run_query(id_query)
+    old_id_list = old_id_df.iloc[:,0].to_list()
     
-    query = """SELECT id, body_text
+    # using above information to get new surveys
+    old_id_string = ", ".join(old_id_list)
+    query = f"""SELECT id, body_text
         FROM `cx-mvp.gorgias.satisfaction_surveys`
         WHERE body_text is not null
         and body_text != ''
+        and id not in ({old_id_string})
     """
     body_text_df = gorgias_client.run_query(query)
     print(f"Got {body_text_df.shape[0]} records to analyze...")
 
+    # getting inferences from OpenAI
     inferences = []
     for id, body_text in body_text_df.itertuples(index=False):
         sentiment = analyze_sentiments(body_text)
@@ -55,6 +65,7 @@ def main():
         inferences.append(result)
         print(result)
 
+    # storing the output to staging table
     output_df = pd.DataFrame(inferences)
     output_df.columns = ['id','query_text','sentiment']
     staging_client.insert_alter('staging_sentiment_analysis', output_df)
